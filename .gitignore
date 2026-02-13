@@ -1,0 +1,35 @@
+# Extracted data (large)
+data/v1_outs/
+data/prime_outs/
+*.zarr/
+
+# Results and logs (optional; remove if you want to track them)
+results/
+AGENT_LOG.md
+
+# Processed data (large h5ad, etc.)
+processed_data/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+
+# Virtual env
+venv/
+.venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

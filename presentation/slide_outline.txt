@@ -1,0 +1,189 @@
+================================================================================
+PRESENTATION SLIDE OUTLINE: SpatialBridge and Cold-Spot Concordance
+================================================================================
+Slide headings, subheadings with description, and outline of contents.
+Audience: understand biology, math, and computational approach.
+
+Current approach: Cold-spot scores are AGGREGATE scores (not single-gene): we use
+two gene lists—List A (shared immune genes) for native v1, List B (5K-only immune
+genes) for Prime and imputed v1. Score = −mean(z) over the list; single-gene is
+fallback only when lists are empty or no genes pass the filter.
+================================================================================
+
+---- PART 1: BIOLOGY BACKGROUND ----
+
+Slide 1 – Tumor microenvironment and immune infiltration
+  Subtitle: Why spatial gene expression matters in ovarian cancer
+  Description: Set up the biological question—heterogeneity of immune infiltration and its clinical relevance.
+  Contents:
+    - Tumor microenvironment (TME): tumor cells, stroma, immune infiltrate, vasculature.
+    - “Hot” vs “cold” tumors: high vs low immune infiltration; implications for immunotherapy and prognosis.
+    - Ovarian cancer (e.g. high-grade serous): spatial heterogeneity, need to map where immune cells are (and are not).
+    - Single-cell / cell-level spatial transcriptomics (Xenium) as a way to quantify this in situ.
+
+Slide 2 – Cold spots: definition and biological meaning
+  Subtitle: Regions of low immune infiltration within the tumor
+  Description: Define “cold” in a way that connects to our scoring and to pathology.
+  Contents:
+    - Cold spot = region where immune (e.g. T cell) signals are low relative to the rest of the tissue.
+    - Single direction: high expression of immune markers (e.g. CD8A, PTPRC, LAG3) → less “cold”; low expression → more “cold.” We combine many such markers into one aggregate cold score per cell.
+    - Why we focus on tumor (PAX8+) cells only: cold spots are meaningful as “immune-cold regions within the tumor,” not in stroma alone.
+    - Relevance: immune exclusion, resistance to checkpoint blockade, spatial patterns at boundary vs core.
+
+Slide 3 – What Xenium v1 and Prime 5K measure
+  Subtitle: Two adjacent sections, two panels (477 vs ~5000 genes)
+  Description: Technical context so the audience knows what “v1” and “5K” are and why we combine them.
+  Contents:
+    - Xenium v1: ~477 genes (e.g. Human Multi-Tissue and Cancer + custom); one section.
+    - Xenium Prime 5K: ~5000 genes (e.g. Pan Tissue and Pathways); adjacent serial section from same block.
+    - Same tissue, different gene panels → shared genes (intersection) and Prime-only genes.
+    - Cell-level outputs: expression matrix, spatial coordinates (x, y in µm), segmentation.
+
+---- PART 2: MATH AND COMPUTATIONAL BACKGROUND ----
+
+Slide 4 – Normalization and z-scores (why we use them for aggregate cold score)
+  Subtitle: Putting genes on a comparable scale so we can average over many immune genes
+  Description: Brief math so “cold score = −mean(z) over gene list” is interpretable.
+  Contents:
+    - Total-count normalization (e.g. 10,000 per cell) + log1p: standard for spatial/single-cell.
+    - z-score per gene: z_g = (x_g − μ_g) / σ_g; puts each gene on a comparable scale across cells.
+    - For immune genes: high expression → high z; we want “cold” = low immune, so cold contribution = −z (high score = low immune = cold).
+    - We use aggregate cold score: mean over a list of immune genes of (−z). Two lists: shared genes (native v1) and 5K-only genes (Prime and imputed v1). Robust, interpretable composite.
+
+Slide 5 – k-nearest neighbors (KNN) regression in one slide
+  Subtitle: Predicting a gene from a cell’s “neighbors” in shared-gene space
+  Description: Enough to understand imputation without heavy ML.
+  Contents:
+    - Feature space: each cell = vector of shared-gene expression.
+    - For a Prime-only gene: on Prime cells we have (shared-gene vector → that gene’s expression). KNN finds k nearest Prime cells in shared-gene space; prediction = distance-weighted average of their expression for that gene.
+    - One KNN per Prime-only gene; same shared-gene space for all. Applied to v1 cells to get “imputed” Prime-only expression in v1 space.
+    - Intuition: cells with similar shared-gene profiles tend to have similar Prime-only gene expression.
+
+Slide 6 – Concordance and how we measure agreement
+  Subtitle: Pearson correlation and Lin’s CCC for zone-level comparison of aggregate cold scores
+  Description: So “Prime vs imputed v1 concordance” is clear.
+  Contents:
+    - We compare two datasets (Prime real 5K vs v1 imputed 5K) at the level of spatial zones, not cell-by-cell (sections differ). Both use the same aggregate (List B, 5K-only genes).
+    - Per zone: mean aggregate cold score in Prime, mean aggregate cold score in v1 imputed. Scatter: Prime mean vs v1 mean across zones.
+    - Pearson r: linear association; Lin’s concordance correlation coefficient (CCC): agreement (location and scale); p-value for r (significance of correlation).
+    - Interpretation: high r and CCC → imputed aggregate cold-spot geography agrees with real 5K.
+
+---- PART 3: SPATIALBRIDGE PIPELINE ----
+
+Slide 7 – The core problem and SpatialBridge concept
+  Subtitle: Rich spatial morphology in v1, limited gene panel; use adjacent 5K to “upsample”
+  Description: Motivate the pipeline in one slide.
+  Contents:
+    - v1: good spatial coverage, fewer genes (no LAG3, IDO1, etc. in panel). Prime 5K: same tissue, many more genes.
+    - Idea: align the two sections, learn mapping from shared-gene expression to Prime-only genes on Prime, then apply to v1 → “imputed 5K” in v1 space.
+    - High-level flow: v1 + Prime → harmonize → align → impute (KNN) → validate; downstream: cold-spot maps and concordance.
+
+Slide 8 – Data inputs and preprocessing
+  Subtitle: Cell-level matrices, coordinates, normalization, shared-gene set
+  Description: What goes in and how we make v1 and Prime comparable.
+  Contents:
+    - Inputs: cell_feature_matrix (expression), cells.parquet (coordinates, cell IDs); from Xenium outputs (v1 and Prime bundles).
+    - Shared genes: intersection of v1 and Prime gene lists; used as common feature space for alignment and KNN.
+    - Preprocessing: total-count normalization (e.g. 10,000), log1p; store in a “normalized” layer for both.
+
+Slide 9 – Spatial registration using anchors
+  Subtitle: PAX8 and PTPRC expression-weighted centroids align Prime to v1
+  Description: How we get the two sections on the same coordinate system.
+  Contents:
+    - Anchor genes: PAX8 (tumor), PTPRC (immune)—present in both panels, biologically interpretable.
+    - For each gene: expression-weighted centroid of (x, y) in each dataset. Translation (dx, dy) = v1 centroid − Prime centroid (averaged over the two genes). Apply translation to Prime coordinates.
+    - No rotation or scaling; minimal model suited to adjacent sections. Result: Prime and v1 spatially aligned for downstream comparison.
+
+Slide 10 – KNN-based imputation (shared → Prime-only)
+  Subtitle: One KNN per Prime-only gene; predict in v1 from shared-gene expression
+  Description: The core computational step.
+  Contents:
+    - Train on Prime: predictors = shared-gene normalized expression; response = one Prime-only gene. k = 15, distance-weighted mean.
+    - Predict for every v1 cell: use its shared-gene vector, find k nearest Prime cells, weighted average of their expression for that gene.
+    - Single shared-gene space (one NearestNeighbors fit); stream over Prime-only genes for memory efficiency. Output: v1 cells × (shared + imputed Prime-only) in layer “imputed_5k.”
+
+Slide 11 – Validation strategy
+  Subtitle: Holdout shared genes; compare real vs imputed to quantify accuracy
+  Description: How we know imputation is reasonable.
+  Contents:
+    - Hold out ~50 shared genes. For each: train KNN on Prime (remaining shared → held-out gene), predict in v1. Compare imputed vs real (v1’s actual expression for that gene).
+    - Metrics: Pearson r and MSE across cells and held-out genes. Optional: target r ≥ 0.80. Validation scatter plot: real vs imputed expression.
+    - Limitation: same-section comparison; zone-level and cold-spot concordance add spatial context.
+
+---- PART 4: COLD-SPOT CONCORDANCE APPROACH ----
+
+Slide 12 – Cold-spot score: aggregate (two gene lists), immune-only
+  Subtitle: We use aggregate scores only: List A (shared) for native v1; List B (5K-only) for Prime and imputed v1
+  Description: Our scoring design—always aggregate over a list of immune genes; two lists for the two contexts.
+  Contents:
+    - Cold score = aggregate, immune-only (no tumor in score). Per cell: score = −mean(z) over a list of immune genes. High score = low immune = cold. We do not use single-gene cold score in the main analysis (only as fallback if lists are empty).
+    - List A (shared): immune genes in both v1 and 5K (e.g. PTPRC, CD3D, CD4, CD8A, CD8B). Used only for “native” v1 aggregate score (normalized layer only)—best cold-spot map v1 can do without imputation.
+    - List B (5K-only): immune genes only in 5K panel (e.g. LAG3, IDO1, PDCD1, …; 10–30 genes). Used for Prime map and for imputed v1 map. Demonstrates value of imputation (genes v1 doesn’t have natively).
+    - Tumor mask: PAX8-high cells; we color only tumor by aggregate cold score and show non-tumor as light grey so “cold spots in tumor” is explicit.
+
+Slide 13 – Spatial zones: boundary, vasculature, necrosis
+  Subtitle: Where we evaluate concordance (tumor boundary band, distance to vessels, necrotic/low-RNA)
+  Description: Define the zones we use for zone-level concordance of aggregate cold scores.
+  Contents:
+    - Tumor boundary band: PAX8-high tumor, KNN-defined boundary (tumor cells with non-tumor neighbors), then cells within 50 µm of that boundary.
+    - Distance from vasculature: PECAM1-high cells as “vessel”; per-cell distance to nearest vessel; bins (e.g. 0–50, 50–100, 100–200, 200–500 µm).
+    - Necrotic / low-RNA: bottom 2% of total expression as proxy for necrotic or low-viability cells.
+    - Per zone: mean aggregate cold score in Prime, mean aggregate cold score in v1 imputed → one point per zone in concordance scatter (and bar chart).
+
+Slide 14 – Native vs imputed: side-by-side and concordance figures
+  Subtitle: Visual and quantitative evidence that imputation improves cold-spot detection (all maps use aggregate scores)
+  Description: What the key figures show; every cold-spot map uses an aggregate over a gene list.
+  Contents:
+    - Main cold-spot maps: Prime (real 5K) vs v1 (imputed 5K), same aggregate (List B, 5K-only genes); tumor-only colored, background grey.
+    - Native vs imputed (v1 only): left = aggregate over List A (shared genes, no imputation); right = aggregate over List B (5K-only genes, imputed). Similar spatial patterns support imputation accuracy.
+    - Zone-level: bar chart (mean aggregate cold score by zone, Prime vs v1); concordance scatter (Prime mean vs v1 mean per zone) with Pearson r, p-value, CCC.
+    - Feature maps: side-by-side tumor boundary, vasculature (PECAM1+), necrotic/low-RNA for Prime vs v1 (same layout).
+
+---- PART 4b: RESULTS ----
+
+Slide 14b – Cold-spot score distribution: native v1 vs imputed v1 vs 5K (all aggregate scores)
+  Subtitle: Imputed v1 (List B aggregate) resembles real 5K more than native v1 (List A aggregate)
+  Description: Summarize the main result—imputation brings v1’s aggregate cold-spot map in line with 5K.
+  Contents:
+    - Native v1 (List A aggregate, shared genes only): more extreme high and low scores; overall field can look more “red” (higher cold score on average); fewer genes → noisier, more variable composite.
+    - Imputed v1 (List B aggregate, 5K-only genes): less extreme scores, more values near zero; more neutral, balanced appearance.
+    - Real 5K map (List B aggregate, same 5K-only genes): also shows scores closer to zero and more neutral background.
+    - Takeaway: the imputed v1 aggregate cold-spot map (List B) is more similar to the real 5K map in both range and pattern than the native v1 aggregate map (List A)—supports that imputation is recapitulating 5K-style immune geography.
+
+Slide 14c – Side-by-side figures to show in the talk
+  Subtitle: Which panels to put on the results slides (all use aggregate cold scores)
+  Description: Point to the exact outputs that demonstrate the above.
+  Contents:
+    - coldspot_v1_native_vs_imputed_sidebyside.png: left = List A aggregate, native (extreme, redder); right = List B aggregate, imputed (more neutral, 5K-like).
+    - coldspot_maps_sidebyside.png: Prime (real 5K) vs v1 (imputed 5K); both use same List B (5K-only) aggregate; comparable scale and pattern.
+    - Optional: coldspot_concordance_scatter.png and coldspot_by_context_sidebyside.png for zone-level concordance of mean aggregate scores (r, CCC, p-value). coldspot_interpretation.txt reports gene counts used per list.
+
+---- PART 5: OUTPUTS AND INTERPRETATION ----
+
+Slide 15 – Summary of outputs and how to read them
+  Subtitle: Alignment, validation, virtual stains, aggregate cold-spot maps, zone concordance
+  Description: Checklist of figures and files; cold-spot outputs all use aggregate scores (two lists).
+  Contents:
+    - Pipeline: alignment_check.png (PAX8/PTPRC overlap); validation_scatter.png (real vs imputed); virtual_stain_2x2.png; results_summary.txt.
+    - Cold-spot (aggregate scores): coldspot_maps_sidebyside.png (Prime vs v1, List B); coldspot_v1_native_vs_imputed_sidebyside.png (List A vs List B); coldspot_by_context_sidebyside.png (mean aggregate score by zone); coldspot_concordance_scatter.png (r, CCC); coldspot_feature_* (boundary, vasculature, necrosis); coldspot_zone_means.csv, coldspot_interpretation.txt (includes N shared / M 5K-only genes used).
+    - Interpretation: zone-level r and CCC and p-value; “is imputed data useful?” in interpretation file; blank cells in zone table = no cells in that zone for that dataset.
+
+Slide 16 – Assumptions and limitations
+  Subtitle: When SpatialBridge and cold-spot concordance are reliable (and when not)
+  Description: Honest scope for the audience.
+  Contents:
+    - Adjacent sections: similar biology, no guarantee of identical cell positions; zone-level comparison is appropriate.
+    - KNN: smooths locally; may compress extremes (e.g. very high expression). Single sample (n=1) pilot; generalizability needs more replicates.
+    - Cold-spot: we use curated aggregate gene lists (List A shared, List B 5K-only); panel-dependent; only genes present in the data are used. Empty zones (e.g. no cells in a vessel bin) give missing values in zone table.
+    - No cell-level correspondence between Prime and v1; concordance is at zone (and pattern) level.
+
+Slide 17 – Potential applications and next steps
+  Subtitle: From proof-of-concept to biomarker and discovery use
+  Description: Where this could go.
+  Contents:
+    - Applications: exploratory cold-spot mapping, hypothesis generation for immune exclusion, virtual staining for pathologist review, multi-sample aggregation (run same pipeline on more section pairs).
+    - Extensions: multi-sample or cross-sample KNN training; cell-type–stratified validation; additional zones or molecular definitions of cold spots; integration with imaging or clinical outcomes.
+
+================================================================================
+END OF SLIDE OUTLINE
+================================================================================
