@@ -7,8 +7,8 @@
 ## Quick start
 
 ```bash
-git clone <repository-url>
-cd clean_repo_xenium
+git clone https://github.com/gtollefson/spatialbridge.git
+cd spatialbridge
 pip install -r requirements.txt
 ```
 
@@ -82,16 +82,19 @@ flowchart TB
 
 ## Representative results (cold-spot concordance)
 
-After running the pipeline, the cold-spot step produces side-by-side maps comparing:
+These figures illustrate the tool conceptually: spatial imputation recapitulates immune cold-spot geography, enabling applications that scale from single-section proof-of-concept to multi-sample discovery. The pipeline can be run on additional (v1, Prime) section pairs as they become available; results can be aggregated per sample or compared across cohorts.
 
-1. **Prime (real 5K) vs v1 (imputed 5K)** — Cold-spot geography in tumor (PAX8+) cells; aggregate immune score.
-2. **v1 native vs v1 imputed** — Improvement from imputation: native v1 (shared genes only) vs v1 with 5K imputed genes.
+### Prime (real 5K) vs v1 (imputed 5K)
 
-| Prime vs v1 imputed | v1 native vs v1 imputed |
-|---------------------|-------------------------|
-| ![Prime vs v1 imputed](docs/figures/coldspot_maps_sidebyside.png) | ![v1 native vs imputed](docs/figures/coldspot_v1_native_vs_imputed_sidebyside.png) |
+Cold-spot geography in tumor (PAX8+) cells using aggregate immune scores. Similar spatial patterns between Prime (ground truth) and imputed v1 indicate that the KNN-based imputation preserves biologically meaningful geography.
 
-*Copy the PNGs from `results/` to `docs/figures/` after running the pipeline (see `docs/figures/.gitkeep`).*
+![Prime vs v1 imputed](docs/figures/coldspot_maps_sidebyside.png)
+
+### v1 native vs v1 imputed
+
+Improvement from imputation: native v1 (shared genes only) vs v1 with 5K imputed genes. The imputed panel captures 5K-only immune markers (e.g. LAG3, IDO1) in v1 space, enabling cold-spot analyses that the native v1 panel cannot support.
+
+![v1 native vs imputed](docs/figures/coldspot_v1_native_vs_imputed_sidebyside.png)
 
 ---
 
